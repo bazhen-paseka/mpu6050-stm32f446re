@@ -25,6 +25,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+	#include <string.h>
+	#include "stdio.h"
+	#include "mpu6050.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,10 +38,18 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+	#define MY_DEBUG
+#ifdef MY_DEBUG
+	#define 	UART_DEBUG 			&huart4
+#endif
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+
+	MPU6050_t MPU6050;
 
 /* USER CODE END PM */
 
@@ -50,6 +62,9 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+
+	void UartDebug(char* _text) ;
+	void I2C_ScanBusFlow(I2C_HandleTypeDef * _hi2c, UART_HandleTypeDef * _huart) ;
 
 /* USER CODE END PFP */
 
@@ -93,10 +108,34 @@ int main(void)
 
   /* USER CODE END 2 */
 
+	char		debugString[0XFF]	= { 0 } ;
+
+	#define 	DATE_as_int_str 	(__DATE__)
+	#define 	TIME_as_int_str 	(__TIME__)
+	sprintf(debugString,"\tBuild: %s. Time: %s.\r\n" ,	DATE_as_int_str , TIME_as_int_str ) ;
+	UartDebug(debugString);
+
+	I2C_ScanBusFlow(&hi2c1, &huart4);
+
+	sprintf(debugString,"Connect and init MPU6050... " ) ;
+	UartDebug(debugString);
+
+	while (MPU6050_Init(&hi2c1) == 1);
+
+	sprintf(debugString,"successful!\r\n\r\n" ) ;
+	UartDebug(debugString);
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  MPU6050_Read_All(&hi2c1, &MPU6050);
+	  HAL_Delay(100);
+	  sprintf(debugString,"x.Raw -> %x\ty.Raw -> %x\tz.Raw -> %x\t ", MPU6050.Accel_X_RAW , MPU6050.Accel_Y_RAW , MPU6050.Accel_Z_RAW);
+		UartDebug(debugString);
+
+	  sprintf(debugString,"x -> %fx\ty -> %fx\tz -> %fx\t \n\r", MPU6050.Ax, MPU6050.Ay, MPU6050.Az);
+		UartDebug(debugString);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -158,6 +197,50 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void UartDebug(char* _text) {
+	#ifdef MY_DEBUG
+		HAL_UART_Transmit(UART_DEBUG, (uint8_t*)_text, strlen(_text), 100);
+	#endif
+}	//***********************************************************************
+
+//======================================================================
+void I2C_ScanBusFlow(I2C_HandleTypeDef * _hi2c, UART_HandleTypeDef * _huart) {
+	char DataChar[64];
+	uint8_t device_serial_numb = 0;
+
+	sprintf(DataChar,"\r\n\tStart scan I2C\r\n");
+	HAL_UART_Transmit(_huart, (uint8_t *)DataChar, strlen(DataChar), 100);
+
+	for ( uint8_t sbf = 0x07; sbf < 0x78; sbf++) {
+		if (HAL_I2C_IsDeviceReady(_hi2c, sbf << 1, 10, 100) == HAL_OK) {
+			device_serial_numb++;
+			switch (sbf) {
+				case 0x20: sprintf(DataChar,"%d) PCF-8574"			, device_serial_numb ) ; 	break ;
+				case 0x23: sprintf(DataChar,"%d) BH-1750"			, device_serial_numb ) ; 	break ;
+				case 0x27: sprintf(DataChar,"%d) FC113 "			, device_serial_numb ) ; 	break ;
+				case 0x38: sprintf(DataChar,"%d) PCF-8574"			, device_serial_numb ) ; 	break ;
+				case 0x57: sprintf(DataChar,"%d) AT24c32"			, device_serial_numb ) ; 	break ;
+				case 0x50: sprintf(DataChar,"%d) AT24c256"			, device_serial_numb ) ; 	break ;
+				case 0x68: sprintf(DataChar,"%d) DS3231 or MPU9250"	, device_serial_numb ) ; 	break ;
+				case 0x76: sprintf(DataChar,"%d) BMP280"			, device_serial_numb ) ; 	break ;
+				case 0x77: sprintf(DataChar,"%d) BMP180"			, device_serial_numb ) ; 	break ;
+				default:   sprintf(DataChar,"%d) Unknown"			, device_serial_numb ) ;	break ;
+			}// end switch
+			char DataCharRes[96];
+			sprintf(DataCharRes,"%s\tAdr: 0x%x\r\n", DataChar, sbf);
+			HAL_UART_Transmit(_huart, (uint8_t *)DataCharRes, strlen(DataCharRes), 100);
+			HAL_Delay(10);
+		} //end if HAL I2C1
+	} // end for sbf i2c1
+
+	if (device_serial_numb == 0) {
+		sprintf(DataChar,"---no devices found---\r\n");
+		HAL_UART_Transmit(_huart, (uint8_t *)DataChar, strlen(DataChar), 100);
+	}
+	sprintf(DataChar,"\tEnd scan I2C\r\n");
+	HAL_UART_Transmit(_huart, (uint8_t *)DataChar, strlen(DataChar), 100);
+}// end void I2C_ScanBus
 
 /* USER CODE END 4 */
 
